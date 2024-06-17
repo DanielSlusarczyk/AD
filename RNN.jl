@@ -11,6 +11,8 @@ mutable struct RNNet
     
     L_RNN
     ŷ_RNN
+    
+    batchsize
 
     RNNet() = new(
         ntuple(x->nothing, fieldcount(RNNet))...
@@ -39,7 +41,7 @@ function loader(data; batchsize::Int=1)
     Flux.DataLoader((x1dim, yhot); batchsize, shuffle=true)
 end
 
-function init!(net, n_input, n_neurons, n_output)
+function init!(net, n_input::Int64, n_neurons::Int64, n_output::Int64, batchsize::Int64)
 
     # Initialization using Xavier method
     # https://fluxml.ai/Flux.jl/stable/utilities/
@@ -47,9 +49,9 @@ function init!(net, n_input, n_neurons, n_output)
     net.Wxh = Variable(Flux.glorot_normal(n_neurons, n_input), name="Wxh", reset=false)
     net.Whh = Variable(Flux.glorot_normal(n_neurons, n_neurons), name="Whh", reset=false)
     net.Why = Variable(Flux.glorot_normal(n_output, n_neurons), name="Why", reset=false)
-    net.bh = Variable(Flux.glorot_normal(n_neurons, 1), name="bh", reset=false)
-    net.by = Variable(Flux.glorot_normal(n_output, 1), name="by", reset=false)
-    net.h = Variable(Flux.glorot_normal(n_neurons, 1), name="h_prev", reset=false)
+    net.bh = Variable(Flux.glorot_normal(n_neurons, batchsize), name="bh", reset=false)
+    net.by = Variable(Flux.glorot_normal(n_output, batchsize), name="by", reset=false)
+    net.h = Variable(Flux.glorot_normal(n_neurons, batchsize), name="h_prev", reset=false)
     
 end
 
@@ -75,11 +77,11 @@ function RRNDense(ŷ, y)
 end
 
 # Create recurrent connections for each sequence
-function model!(net::RNNet, seqs::Int64, n_input::Int64)
+function model!(net::RNNet, seqs::Int64, n_input::Int64, batchsize::Int64)
 
     Xts = Vector()
     for _ in 1:seqs
-        Xt = Variable(randn(n_input, 1), name="Xt")
+        Xt = Variable(randn(n_input, batchsize), name="Xt")
         h = RNNDense(Xt, net.Wxh, net.Whh, net.bh, net.h)
         
         push!(Xts, Xt)
@@ -89,8 +91,8 @@ function model!(net::RNNet, seqs::Int64, n_input::Int64)
     net.Xts = Xts
 end
 
-function model_output!(net::RNNet, output)
-    net.y = Variable(randn(output, 1), name="y")
+function model_output!(net::RNNet, output::Int64, batchsize::Int64)
+    net.y = Variable(randn(output, batchsize), name="y")
 
     ŷ = RNNDense(net.h, net.Why, net.by)
     L = RRNDense(ŷ, net.y)
@@ -102,21 +104,22 @@ end
 function test!(model, data)
     correct = 0
     
-    for (X_batch, Y_batch) in loader(data, batchsize=length(data))
+    for (X_batch, Y_batch) in loader(data, batchsize=model.batchsize)
 
-        for i in 1:length(data)
-            model.Xts[1].output = X_batch[1:196, i:i]
-            model.Xts[2].output = X_batch[197:392, i:i]
-            model.Xts[3].output = X_batch[393:588, i:i]
-            model.Xts[4].output = X_batch[589:end, i:i]
+
+            model.Xts[1].output = @views X_batch[1:196, :]
+            model.Xts[2].output = @views X_batch[197:392, :]
+            model.Xts[3].output = @views X_batch[393:588, :]
+            model.Xts[4].output = @views X_batch[589:end, :]
     
-            y = @views Y_batch[:,i]
+            y = @views Y_batch[:,:]
             ŷ = forward!(model.ŷ_RNN)
-    
-            if Flux.onecold(ŷ) == [Flux.onecold(y)]
-                correct +=1
+
+            for i in axes(y, 2)
+                if Flux.onecold(ŷ[:, i]) == Flux.onecold(y[:, i])
+                    correct += 1
+                end
             end
-        end
     end
 
     println("Correct: ", round(100 * correct/length(data); digits=2), "%")
@@ -147,17 +150,21 @@ function update_batch∇!(net::RNNet, ∇W::∇, batch::Int64, α = 0.01)
     fill!(∇W.∇by, 0.)
 end
 
-function define_RNN(sequence::Int64, length::Int64, neurons::Int64, output::Int64)
+function define_RNN(sequence::Int64, length::Int64, neurons::Int64, output::Int64, batchsize::Int64)
     net = RNNet()
     
-    init!(net, length, neurons, output)
+    init!(net, length, neurons, output, batchsize)
     
-    model!(net, sequence, length)
+    model!(net, sequence, length, batchsize)
     
-    model_output!(net, output)
+    model_output!(net, output, batchsize)
+
+
 
     init!(net.L_RNN)
     init!(net.ŷ_RNN)
+
+    net.batchsize = batchsize
 
     return net
 end

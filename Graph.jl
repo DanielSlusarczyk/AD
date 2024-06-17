@@ -104,8 +104,7 @@ end
 
 function backward!(order::Vector; seed=1.0)
     result = last(order)
-    result.gradient = fill(seed, 1, 1)
-    @assert length(result.output) == 1 "Gradient is defined only for scalar functions"
+    result.gradient = fill(seed, 1, length(result.output))
     for node in reverse(order)
         backward!(node)
     end
@@ -116,41 +115,28 @@ backward!(node::Constant) = nothing
 backward!(node::Variable) = nothing
 backward!(node::Operator) = backward!(node, [input.output for input in node.inputs]..., node.gradient)
 
-import Base: -
--(x::GraphNode) = ScalarOperator(-, x)
-forward!(::ScalarOperator{typeof(-)}, x) = let 
-    node.output .= -x
-end
-forward_init!(::ScalarOperator{typeof(-)}, x) = let 
-    node.output = -x
-end
-backward!(::ScalarOperator{typeof(-)}, ∇) = let     
-    node.inputs[1].gradient .+= -∇
-end
-
 σ(x::GraphNode) = BroadcastedOperator(σ, x)
 forward!(node::BroadcastedOperator{typeof(σ)}, x) = let 
-    node.output .= exp.(x) ./ sum(exp.(x))
+    node.output .= exp.(x) ./ sum(exp.(x), dims=1)
 end
 forward_init!(node::BroadcastedOperator{typeof(σ)}, x) = let 
-    node.output = exp.(x) ./ sum(exp.(x))
+    node.output = exp.(x) ./ sum(exp.(x), dims=1)
 end
 
 CSLoss(y::GraphNode, ŷ::GraphNode) = BroadcastedOperator(CSLoss, y, ŷ)
 forward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ) = let    
-    σ = exp.(ŷ) ./ sum(exp.(ŷ))
+    σ = exp.(ŷ) ./ sum(exp.(ŷ), dims=1)
 
-    node.output = fill(-sum(y .* log.(σ)), 1, 1)
+    node.output = -sum(y .* log.(σ), dims=1)
 end
 forward_init!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ) = let    
     σ = exp.(ŷ) ./ sum(exp.(ŷ))
-
-    node.output = fill(-sum(y .* log.(σ)), 1, 1)
+    node.output = -sum(y .* log.(σ), dims=1)
 end
 backward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ, ∇) = let
 
     # https://shivammehta25.github.io/posts/deriving-categorical-cross-entropy-and-softmax/
-    σ = exp.(ŷ) ./ sum(exp.(ŷ))
+    σ = exp.(ŷ) ./ sum(exp.(ŷ), dims=1)
 
     node.inputs[1].gradient += y
     node.inputs[2].gradient .+= (σ .- y) .* ∇
