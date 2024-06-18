@@ -116,24 +116,24 @@ backward!(node::Variable) = nothing
 backward!(node::Operator) = backward!(node, [input.output for input in node.inputs]..., node.gradient)
 
 σ(x::GraphNode) = BroadcastedOperator(σ, x)
-forward!(node::BroadcastedOperator{typeof(σ)}, x) = let 
+forward!(node::BroadcastedOperator{typeof(σ)}, x::Matrix{Float64}) = let 
     node.output .= exp.(x) ./ sum(exp.(x), dims=1)
 end
-forward_init!(node::BroadcastedOperator{typeof(σ)}, x) = let 
+forward_init!(node::BroadcastedOperator{typeof(σ)}, x::Matrix{Float64}) = let 
     node.output = exp.(x) ./ sum(exp.(x), dims=1)
 end
 
 CSLoss(y::GraphNode, ŷ::GraphNode) = BroadcastedOperator(CSLoss, y, ŷ)
-forward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ) = let    
+forward!(node::BroadcastedOperator{typeof(CSLoss)}, y::Matrix{Float64}, ŷ::Matrix{Float64}) = let    
     σ = exp.(ŷ) ./ (sum(exp.(ŷ), dims=1))
 
     node.output = -sum(y .* log.(σ), dims=1)
 end
-forward_init!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ) = let    
+forward_init!(node::BroadcastedOperator{typeof(CSLoss)}, y::Matrix{Float64}, ŷ::Matrix{Float64}) = let    
     σ = exp.(ŷ) ./ sum(exp.(ŷ))
     node.output = -sum(y .* log.(σ), dims=1)
 end
-backward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ, ∇) = let
+backward!(node::BroadcastedOperator{typeof(CSLoss)}, y::Matrix{Float64}, ŷ::Matrix{Float64}, ∇::Matrix{Float64}) = let
 
     # https://shivammehta25.github.io/posts/deriving-categorical-cross-entropy-and-softmax/
     σ = exp.(ŷ) ./ sum(exp.(ŷ), dims=1)
@@ -143,13 +143,13 @@ backward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ, ∇) = let
 end
 import Base: +
 +(x::GraphNode, y::GraphNode) = ScalarOperator(+, x, y)
-forward!(node::ScalarOperator{typeof(+)}, A, B) = let 
+forward!(node::ScalarOperator{typeof(+)}, A::Matrix{Float64}, B::Matrix{Float64}) = let 
     node.output .= A .+ B
 end
-forward_init!(node::ScalarOperator{typeof(+)}, A, B) = let     
+forward_init!(node::ScalarOperator{typeof(+)}, A::Matrix{Float64}, B::Matrix{Float64}) = let     
     node.output = A .+ B
 end
-backward!(node::ScalarOperator{typeof(+)}, _, _, ∇) = let 
+backward!(node::ScalarOperator{typeof(+)}, _::Matrix{Float64}, _::Matrix{Float64}, ∇::Matrix{Float64}) = let 
     node.inputs[1].gradient .+= ∇
     node.inputs[2].gradient .+= ∇
 end
@@ -157,50 +157,50 @@ end
 import Base: *
 import LinearAlgebra: mul!
 # x * y (aka matrix multiplication)
-*(A::GraphNode, x::GraphNode) = BroadcastedOperator(mul!, A, x)
-forward!(node::BroadcastedOperator{typeof(mul!)}, A, x) = let 
-    mul!(node.output, A, x)
+*(A::GraphNode, B::GraphNode) = BroadcastedOperator(mul!, A, B)
+forward!(node::BroadcastedOperator{typeof(mul!)}, A::Matrix{Float64}, B::Matrix{Float64}) = let 
+    mul!(node.output, A, B)
 end
-forward_init!(node::BroadcastedOperator{typeof(mul!)}, A, x) = let     
-    node.output = A * x
+forward_init!(node::BroadcastedOperator{typeof(mul!)}, A::Matrix{Float64}, B::Matrix{Float64}) = let     
+    node.output = A * B
 end
-backward!(node::BroadcastedOperator{typeof(mul!)}, A, x, ∇) = let 
-    mul!(node.inputs[1].gradient, ∇, x', 1, 1)
+backward!(node::BroadcastedOperator{typeof(mul!)}, A::Matrix{Float64}, B::Matrix{Float64}, ∇::Matrix{Float64}) = let 
+    mul!(node.inputs[1].gradient, ∇, B', 1, 1)
 
     mul!(node.inputs[2].gradient, A', ∇, 1, 1)
 end
 
 # x .* y (element-wise multiplication)
-Base.Broadcast.broadcasted(*, x::GraphNode, y::GraphNode) = BroadcastedOperator(*, x, y)
-forward!(node::BroadcastedOperator{typeof(*)}, A, x) = let     
-    node.output .= A .* x
+Base.Broadcast.broadcasted(*, A::GraphNode, B::GraphNode) = BroadcastedOperator(*, A::Matrix{Float64}, B::Matrix{Float64})
+forward!(node::BroadcastedOperator{typeof(*)}, A::Matrix{Float64}, B::Matrix{Float64}) = let     
+    node.output .= A .* B
 end
-forward_init!(node::BroadcastedOperator{typeof(*)}, A, x) = let     
-    node.output = A .* x
+forward_init!(node::BroadcastedOperator{typeof(*)}, A::Matrix{Float64}, B::Matrix{Float64}) = let     
+    node.output = A .* B
 end
-backward!(node::BroadcastedOperator{typeof(*)}, A, B, ∇) = let
+backward!(node::BroadcastedOperator{typeof(*)}, A::Matrix{Float64}, B::Matrix{Float64}, ∇::Matrix{Float64}) = let
     node.inputs[1].gradient .+= B .* ∇
 
     node.inputs[2].gradient .+= A .* ∇
 end
-Base.Broadcast.broadcasted(+, x::GraphNode, y::GraphNode) = BroadcastedOperator(+, x, y)
-forward!(node::BroadcastedOperator{typeof(+)}, A, B) = let 
+Base.Broadcast.broadcasted(+, A::GraphNode, B::GraphNode) = BroadcastedOperator(+, A, B)
+forward!(node::BroadcastedOperator{typeof(+)}, A::Matrix{Float64}, B::Matrix{Float64}) = let 
     node.output .= A .+ B
 end
-forward_init!(node::BroadcastedOperator{typeof(+)}, A, B) = let     
+forward_init!(node::BroadcastedOperator{typeof(+)}, A::Matrix{Float64}, B::Matrix{Float64}) = let     
     node.output = A .+ B
 end
-backward!(node::BroadcastedOperator{typeof(+)}, _, _, ∇) = let 
+backward!(node::BroadcastedOperator{typeof(+)}, _::Matrix{Float64}, _::Matrix{Float64}, ∇::Matrix{Float64}) = let 
     node.inputs[1].gradient .+= ∇
     node.inputs[2].gradient .+= sum(∇, dims=2)
 end
 Base.Broadcast.broadcasted(tanh, x::GraphNode) = BroadcastedOperator(tanh, x)
-forward!(node::BroadcastedOperator{typeof(tanh)}, x) = let     
+forward!(node::BroadcastedOperator{typeof(tanh)}, x::Matrix{Float64}) = let     
     node.output .= tanh.(x)
 end
-forward_init!(node::BroadcastedOperator{typeof(tanh)}, x) = let     
+forward_init!(node::BroadcastedOperator{typeof(tanh)}, x::Matrix{Float64}) = let     
     node.output = tanh.(x)
 end
-backward!(node::BroadcastedOperator{typeof(tanh)}, x, ∇) = let
+backward!(node::BroadcastedOperator{typeof(tanh)}, x::Matrix{Float64}, ∇::Matrix{Float64}) = let
     node.inputs[1].gradient .+=  (1 .- tanh.(x) .^ 2) .* ∇
 end

@@ -36,8 +36,10 @@ mutable struct ∇
 end
 
 function loader(data::MNIST; batchsize::Int=1)
-    x1dim = convert(Matrix{Float64}, reshape(data.features, 28 * 28, :)) # reshape 28×28 pixels into a vector of pixels
-    yhot  = Flux.onehotbatch(data.targets, 0:9) # make a 10×60000 OneHotMatrix
+    # reshape 28×28 pixels into a vector of pixels
+    x1dim = convert(Matrix{Float64}, reshape(data.features, 28 * 28, :))
+    # make a 10×60000 OneHotMatrix
+    yhot  = Flux.onehotbatch(data.targets, 0:9) 
     Flux.DataLoader((x1dim, yhot); batchsize, shuffle=true)
 end
 
@@ -55,21 +57,21 @@ function init!(net::RNNet, n_input::Int64, n_neurons::Int64, n_output::Int64)
 end
 
 # Create hidden layer
-function RNNDense(Xt, Wxh, Whh, bh, h_prev)
+function RNNDense(Xt::GraphNode, Wxh::GraphNode, Whh::GraphNode, bh::GraphNode, h_prev::GraphNode)
     h = tanh.(Wxh * Xt + Whh * h_prev .+ bh)
     h.name = "h"
     return h
 end
 
 # Create output layer
-function RNNDense(h, Wyh, by)
+function RNNDense(h::GraphNode, Wyh::GraphNode, by::GraphNode)
     ŷ = Wyh * h .+ by
     ŷ.name = "ŷ"
     return ŷ
 end
 
 # Cross entropy loss layer
-function RRNDense(ŷ, y)
+function RRNDense(ŷ::GraphNode, y::GraphNode)
     L = CSLoss(y, ŷ)
     L.name = "L"
     return L
@@ -101,28 +103,34 @@ function model_output!(net::RNNet, output::Int64, batchsize::Int64)
     net.ŷ_RNN = topological_sort(σ(ŷ))
 end
 
+function test🔍!(model::RNNet, test_data::MNIST, train_data::MNIST)
+    trainAccuracy =  test!(model, train_data)
+    testAccuracy = test!(model, test_data)
+
+    @info "🔥 Statistic: " trainAccuracy testAccuracy 
+end
+
 function test!(model::RNNet, data::MNIST)
     correct = 0
-    
     for (X_batch, Y_batch) in loader(data, batchsize=model.batchsize)
 
 
-            model.Xts[1].output = @views X_batch[1:196, :]
-            model.Xts[2].output = @views X_batch[197:392, :]
-            model.Xts[3].output = @views X_batch[393:588, :]
-            model.Xts[4].output = @views X_batch[589:end, :]
-    
-            y = @views Y_batch
-            ŷ = forward!(model.ŷ_RNN)
+        model.Xts[1].output = @views X_batch[1:196, :]
+        model.Xts[2].output = @views X_batch[197:392, :]
+        model.Xts[3].output = @views X_batch[393:588, :]
+        model.Xts[4].output = @views X_batch[589:end, :]
 
-            for i in axes(y, 2)
-                if Flux.onecold(ŷ[:, i]) == Flux.onecold(y[:, i])
-                    correct += 1
-                end
+        y = @views Y_batch
+        ŷ = forward!(model.ŷ_RNN)
+
+        for i in axes(y, 2)
+            if Flux.onecold(ŷ[:, i]) == Flux.onecold(y[:, i])
+                correct += 1
             end
+        end
     end
 
-    println("Correct: ", round(100 * correct/length(data); digits=2), "%")
+    return round(100 * correct/length(data); digits=2)
 end
 
 function update_batch∇!(net::RNNet, batch::Int64, α::Float64)
