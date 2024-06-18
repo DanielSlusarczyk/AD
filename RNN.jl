@@ -35,13 +35,13 @@ mutable struct ∇
     )
 end
 
-function loader(data; batchsize::Int=1)
+function loader(data::MNIST; batchsize::Int=1)
     x1dim = convert(Matrix{Float64}, reshape(data.features, 28 * 28, :)) # reshape 28×28 pixels into a vector of pixels
     yhot  = Flux.onehotbatch(data.targets, 0:9) # make a 10×60000 OneHotMatrix
     Flux.DataLoader((x1dim, yhot); batchsize, shuffle=true)
 end
 
-function init!(net, n_input::Int64, n_neurons::Int64, n_output::Int64)
+function init!(net::RNNet, n_input::Int64, n_neurons::Int64, n_output::Int64)
 
     # Initialization using Xavier method
     # https://fluxml.ai/Flux.jl/stable/utilities/
@@ -92,7 +92,7 @@ function model!(net::RNNet, seqs::Int64, n_input::Int64, batchsize::Int64)
 end
 
 function model_output!(net::RNNet, output::Int64, batchsize::Int64)
-    net.y = Variable(randn(output, batchsize), name="y")
+    net.y = Variable(Matrix{Float64}(undef, output, batchsize), name="y")
 
     ŷ = RNNDense(net.h, net.Why, net.by)
     L = RRNDense(ŷ, net.y)
@@ -101,7 +101,7 @@ function model_output!(net::RNNet, output::Int64, batchsize::Int64)
     net.ŷ_RNN = topological_sort(σ(ŷ))
 end
 
-function test!(model, data)
+function test!(model::RNNet, data::MNIST)
     correct = 0
     
     for (X_batch, Y_batch) in loader(data, batchsize=model.batchsize)
@@ -125,20 +125,14 @@ function test!(model, data)
     println("Correct: ", round(100 * correct/length(data); digits=2), "%")
 end
 
-function acumulate_∇!(net::RNNet, ∇W::∇)
-    @. ∇W.∇Whh += net.Whh.gradient
-    @. ∇W.∇Wxh += net.Wxh.gradient
-    @. ∇W.∇Why += net.Why.gradient
-    @. ∇W.∇bh += net.bh.gradient
-    @. ∇W.∇by += net.by.gradient
-end
-
-function update_batch∇!(net::RNNet, ∇W::∇, batch::Int64, α = 0.01)
-    @. net.Whh.output -= α * net.Whh.gradient / batch
-    @. net.Wxh.output -= α * net.Wxh.gradient / batch
-    @. net.Why.output -= α * net.Why.gradient / batch
-    @. net.bh.output -= α * net.bh.gradient / batch
-    @. net.by.output -= α * net.by.gradient / batch
+function update_batch∇!(net::RNNet, batch::Int64, α::Float64)
+    scale = α / batch
+    
+    @. net.Whh.output -= scale * net.Whh.gradient
+    @. net.Wxh.output -= scale * net.Wxh.gradient
+    @. net.Why.output -= scale * net.Why.gradient
+    @. net.bh.output -= scale * net.bh.gradient
+    @. net.by.output -= scale * net.by.gradient
 end
 
 function define_RNN(sequence::Int64, length::Int64, neurons::Int64, output::Int64, batchsize::Int64)
@@ -147,16 +141,11 @@ function define_RNN(sequence::Int64, length::Int64, neurons::Int64, output::Int6
     init!(net, length, neurons, output)
     
     model!(net, sequence, length, batchsize)
-    
     model_output!(net, output, batchsize)
-
-
 
     init!(net.L_RNN)
     init!(net.ŷ_RNN)
 
     net.batchsize = batchsize
-
     return net
 end
-
