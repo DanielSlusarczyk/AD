@@ -28,16 +28,13 @@ for epoch in 1:epochs
             @inbounds RNN.Xts[3].output = @views X_batch[393:588,:]
             @inbounds RNN.Xts[4].output = @views X_batch[589:end,:]
 
-            @inbounds RNN.y.output = @views Y_batch[:,:]
+            @inbounds RNN.y.output = @views Y_batch
 
             L += sum(forward!(RNN.L_RNN))
-            
             backward!(RNN.L_RNN)
-
-            acumulate_∇!(RNN, ∇W)
-            reset!(RNN.L_RNN)
             
             update_batch∇!(RNN, ∇W, batchsize, α)
+            reset!(RNN.L_RNN)
         end
 
 

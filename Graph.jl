@@ -15,9 +15,9 @@ mutable struct Variable <: GraphNode
 end
 
 mutable struct ScalarOperator{F} <: Operator
-    inputs :: Matrix{Float64}
+    inputs :: Any
     output :: Matrix{Float64}
-    gradient :: Any
+    gradient :: Matrix{Float64}
     name :: String
     ScalarOperator(fun, inputs...; name="?") = new{typeof(fun)}(inputs, [;;], [;;], name)
 end
@@ -71,7 +71,7 @@ end
 reset!(node::Constant) = nothing
 reset!(node::GraphNode) = fill!(node.gradient, 0.)
 function reset!(order::Vector)
-    for node in order
+    @inbounds for node in order
         reset!(node)
     end
 end
@@ -80,7 +80,7 @@ init!(node::Constant) = nothing
 init!(node::GraphNode) = node.gradient = zeros(size(node.output))
 
 function init!(order::Vector)
-    for node in order
+    @inbounds for node in order
         forward_init!(node)
         init!(node)
     end
@@ -95,7 +95,7 @@ forward_init!(node::Variable) = nothing
 forward_init!(node::Operator) = forward_init!(node, [input.output for input in node.inputs]...)
 
 function forward!(order::Vector)
-    for node in order
+    @inbounds for node in order
         forward!(node)
         
     end
@@ -105,7 +105,7 @@ end
 function backward!(order::Vector; seed=1.0)
     result = last(order)
     result.gradient = fill(seed, 1, length(result.output))
-    for node in reverse(order)
+    @inbounds for node in reverse(order)
         backward!(node)
     end
     return nothing
@@ -125,7 +125,7 @@ end
 
 CSLoss(y::GraphNode, ŷ::GraphNode) = BroadcastedOperator(CSLoss, y, ŷ)
 forward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ) = let    
-    σ = exp.(ŷ) ./ sum(exp.(ŷ), dims=1)
+    σ = exp.(ŷ) ./ (sum(exp.(ŷ), dims=1))
 
     node.output = -sum(y .* log.(σ), dims=1)
 end
@@ -140,6 +140,18 @@ backward!(node::BroadcastedOperator{typeof(CSLoss)}, y, ŷ, ∇) = let
 
     node.inputs[1].gradient += y
     node.inputs[2].gradient .+= (σ .- y) .* ∇
+end
+import Base: +
++(x::GraphNode, y::GraphNode) = ScalarOperator(+, x, y)
+forward!(node::ScalarOperator{typeof(+)}, A, B) = let 
+    node.output .= A .+ B
+end
+forward_init!(node::ScalarOperator{typeof(+)}, A, B) = let     
+    node.output = A .+ B
+end
+backward!(node::ScalarOperator{typeof(+)}, _, _, ∇) = let 
+    node.inputs[1].gradient .+= ∇
+    node.inputs[2].gradient .+= ∇
 end
 
 import Base: *
@@ -180,7 +192,7 @@ forward_init!(node::BroadcastedOperator{typeof(+)}, A, B) = let
 end
 backward!(node::BroadcastedOperator{typeof(+)}, _, _, ∇) = let 
     node.inputs[1].gradient .+= ∇
-    node.inputs[2].gradient .+= ∇
+    node.inputs[2].gradient .+= sum(∇, dims=2)
 end
 Base.Broadcast.broadcasted(tanh, x::GraphNode) = BroadcastedOperator(tanh, x)
 forward!(node::BroadcastedOperator{typeof(tanh)}, x) = let     

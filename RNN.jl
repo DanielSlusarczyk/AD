@@ -41,7 +41,7 @@ function loader(data; batchsize::Int=1)
     Flux.DataLoader((x1dim, yhot); batchsize, shuffle=true)
 end
 
-function init!(net, n_input::Int64, n_neurons::Int64, n_output::Int64, batchsize::Int64)
+function init!(net, n_input::Int64, n_neurons::Int64, n_output::Int64)
 
     # Initialization using Xavier method
     # https://fluxml.ai/Flux.jl/stable/utilities/
@@ -49,15 +49,14 @@ function init!(net, n_input::Int64, n_neurons::Int64, n_output::Int64, batchsize
     net.Wxh = Variable(Flux.glorot_normal(n_neurons, n_input), name="Wxh", reset=false)
     net.Whh = Variable(Flux.glorot_normal(n_neurons, n_neurons), name="Whh", reset=false)
     net.Why = Variable(Flux.glorot_normal(n_output, n_neurons), name="Why", reset=false)
-    net.bh = Variable(Flux.glorot_normal(n_neurons, batchsize), name="bh", reset=false)
-    net.by = Variable(Flux.glorot_normal(n_output, batchsize), name="by", reset=false)
-    net.h = Variable(Flux.glorot_normal(n_neurons, batchsize), name="h_prev", reset=false)
+    net.bh = Variable(Flux.glorot_normal(n_neurons, 1), name="bh", reset=false)
+    net.by = Variable(Flux.glorot_normal(n_output, 1), name="by", reset=false)
     
 end
 
 # Create hidden layer
 function RNNDense(Xt, Wxh, Whh, bh, h_prev)
-    h = tanh.(Wxh * Xt .+ Whh * h_prev .+ bh)
+    h = tanh.(Wxh * Xt + Whh * h_prev .+ bh)
     h.name = "h"
     return h
 end
@@ -78,10 +77,11 @@ end
 
 # Create recurrent connections for each sequence
 function model!(net::RNNet, seqs::Int64, n_input::Int64, batchsize::Int64)
+    net.h = Variable(zeros(size(net.Whh.output, 1), batchsize), name="h_prev", reset=false)
 
     Xts = Vector()
     for _ in 1:seqs
-        Xt = Variable(randn(n_input, batchsize), name="Xt")
+        Xt = Variable(Matrix{Float64}(undef, n_input, batchsize), name="Xt")
         h = RNNDense(Xt, net.Wxh, net.Whh, net.bh, net.h)
         
         push!(Xts, Xt)
@@ -112,7 +112,7 @@ function test!(model, data)
             model.Xts[3].output = @views X_batch[393:588, :]
             model.Xts[4].output = @views X_batch[589:end, :]
     
-            y = @views Y_batch[:,:]
+            y = @views Y_batch
             ŷ = forward!(model.ŷ_RNN)
 
             for i in axes(y, 2)
@@ -134,26 +134,17 @@ function acumulate_∇!(net::RNNet, ∇W::∇)
 end
 
 function update_batch∇!(net::RNNet, ∇W::∇, batch::Int64, α = 0.01)
-    @. net.Whh.output -= α * ∇W.∇Whh / batch
-    fill!(∇W.∇Whh, 0.)
-    
-    @. net.Wxh.output -= α * ∇W.∇Wxh / batch
-    fill!(∇W.∇Wxh, 0.)
-
-    @. net.Why.output -= α * ∇W.∇Why / batch
-    fill!(∇W.∇Why, 0.)
-
-    @. net.bh.output -= α * ∇W.∇bh / batch
-    fill!(∇W.∇bh, 0.)
-
-    @. net.by.output -= α * ∇W.∇by / batch
-    fill!(∇W.∇by, 0.)
+    @. net.Whh.output -= α * net.Whh.gradient / batch
+    @. net.Wxh.output -= α * net.Wxh.gradient / batch
+    @. net.Why.output -= α * net.Why.gradient / batch
+    @. net.bh.output -= α * net.bh.gradient / batch
+    @. net.by.output -= α * net.by.gradient / batch
 end
 
 function define_RNN(sequence::Int64, length::Int64, neurons::Int64, output::Int64, batchsize::Int64)
     net = RNNet()
     
-    init!(net, length, neurons, output, batchsize)
+    init!(net, length, neurons, output)
     
     model!(net, sequence, length, batchsize)
     
