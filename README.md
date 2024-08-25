@@ -10,6 +10,20 @@
    Existing approaches to differentiation have certain limitations that significantly hinder their application, for instance, in the training of neural networks. ”Autodiff” is the method that is gaining significance in the discussed field of science. It enables the numerical computation of the derivative of a function defined by a computer program with minimal effort from the user. The core of AD’s operation is the chain rule and the ability to represent mathematical formulas as a finite sequence of n-argument operations.
 </div>
 
+## :small_blue_diamond: Performance
+<div align="justify">
+Comparing three different implementations of an RNN on the MNIST dataset, we can observe significant differences in classification accuracy, execution time, and memory usage across epochs. The implementations included Python using TensorFlow, a reference solutions in Julia using Flux, and this library in Julia.
+</div>
+
+### Accuracy
+
+<img src="docs/accuracy.png" alt="drawing" width="400"/>
+
+### Time
+<img src="docs/time.png" alt="drawing" width="400"/>
+
+### Mememory
+<img src="docs/memory.png" alt="drawing" width="400"/>
 
 ## :small_blue_diamond: Julia (programming language)
 ![Julia logo](https://github.com/JuliaLang/julia-logo-graphics/blob/master/images/julia-language-logo-white-border.svg)
